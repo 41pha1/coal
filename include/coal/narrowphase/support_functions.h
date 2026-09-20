@@ -299,8 +299,9 @@ void getShapeSupportSet(const LargeConvex<IndexType>* convex,
                         Scalar tol = Scalar(1e-3));
 
 /// @brief Generic ShapeBase support set function.
-/// This overload uses virtual dispatch for custom shapes.
-/// The default behavior computes a single support point.
+/// This overload uses virtual dispatch for custom shapes: it calls
+/// ShapeBase::computeShapeSupportSet(), whose default behavior computes a
+/// single support point.
 template <int _SupportOptions = SupportOptions::NoSweptSphere>
 void getShapeSupportSet(const ShapeBase* shape, SupportSet& support_set,
                         int& hint, ShapeSupportData& support_data,

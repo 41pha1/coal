@@ -112,6 +112,37 @@ class COAL_DLLAPI ShapeBase : public CollisionGeometry {
   virtual void computeShapeSupport(const Vec3s& dir, Vec3s& support, int& hint,
                                    details::ShapeSupportData& data) const;
 
+  /// @brief Compute the support set of this shape in the direction of the
+  /// normal of `support_set`, for contact patch computation.
+  /// The support set is the intersection of the shape with the plane orthogonal
+  /// to `support_set.getNormal()` that touches the shape, up to `tol`. It is
+  /// expressed as a convex polygon in the 2D frame of `support_set`:
+  /// - `support_set.getNormal()` is expressed in the LOCAL frame of this shape
+  ///   and already accounts for the direction (DEFAULT or INVERTED) of the
+  ///   patch.
+  /// - `support_set.tf` maps the patch frame to the local frame of this shape;
+  ///   use `support_set.addPoint(p_local)` or
+  ///   `support_set.tf.inverseTransform(p_local).head<2>()` to convert a 3D
+  ///   point of the shape.
+  /// - The result must be a convex polygon written to `support_set.points()`
+  ///   (use `details::computeSupportSetConvexHull` on a point cloud to obtain
+  ///   one). A result with 1 or 0 points makes the contact patch collapse to
+  ///   the single contact point.
+  /// The default implementation returns the single support point given by
+  /// computeShapeSupport(), i.e. the behavior of custom shapes before this
+  /// method existed. The swept-sphere radius does not need to be handled: it
+  /// only shifts points along the patch normal, which is dropped by the 2D
+  /// projection.
+  /// @param[in,out] support_set the support set to fill.
+  /// @param[in,out] hint warm-start hint.
+  /// @param[in,out] data temporary data; `data.polygon` may be used as scratch.
+  /// @param[in] num_sampled_supports number of samples for curved shapes.
+  /// @param[in] tol thickness of the slab below the support plane.
+  virtual void computeShapeSupportSet(SupportSet& support_set, int& hint,
+                                      details::ShapeSupportData& data,
+                                      size_t num_sampled_supports,
+                                      Scalar tol) const;
+
   /// @brief Whether the Nesterov normalize heuristic should be used
   /// for this shape in GJK. Override for custom shapes if needed.
   /// When wrapping another shape, delegate via

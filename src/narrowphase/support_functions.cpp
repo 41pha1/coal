@@ -1000,17 +1000,15 @@ getShapeSupportSetTplInstantiation(LargeConvex<Triangle32::IndexType>);
 
 // ============================================================================
 // Generic ShapeBase support set function using virtual dispatch.
-// Default behavior: compute a single support point via computeShapeSupport().
+// Delegates to ShapeBase::computeShapeSupportSet(); the default implementation
+// computes a single support point.
 template <int _SupportOptions>
 void getShapeSupportSet(const ShapeBase* shape, SupportSet& support_set,
                         int& hint, ShapeSupportData& support_data,
-                        size_t /*unused*/, Scalar /*unused*/) {
+                        size_t num_sampled_supports, Scalar tol) {
   support_set.points().clear();
-  Vec3s support;
-  const Vec3s& support_dir = support_set.getNormal();
-  getShapeSupport<_SupportOptions>(shape, support_dir, support, hint,
-                                   support_data);
-  support_set.addPoint(support);
+  shape->computeShapeSupportSet(support_set, hint, support_data,
+                                num_sampled_supports, tol);
 }
 getShapeSupportSetTplInstantiation(ShapeBase);
 

@@ -73,6 +73,17 @@ void ShapeBase::computeShapeSupport(const Vec3s& dir, Vec3s& support, int& hint,
       this, dir, hint, data);
 }
 
+void ShapeBase::computeShapeSupportSet(SupportSet& support_set, int& hint,
+                                       details::ShapeSupportData& data,
+                                       size_t /*num_sampled_supports*/,
+                                       Scalar /*tol*/) const {
+  // Default: a single support point (no face information available).
+  support_set.points().clear();
+  Vec3s support;
+  computeShapeSupport(support_set.getNormal(), support, hint, data);
+  support_set.addPoint(support);
+}
+
 template <typename IndexType>
 ConvexBaseTpl<IndexType>* ConvexBaseTpl<IndexType>::convexHull(
     std::shared_ptr<std::vector<Vec3s>>& pts, unsigned int num_points,

@@ -41,6 +41,7 @@
 #define BOOST_TEST_MODULE COAL_CUSTOM_SHAPE
 #include <boost/test/included/unit_test.hpp>
 
+#include "coal/narrowphase/support_functions.h"
 #include "coal/collision.h"
 #include "coal/collision_object.h"
 #include "coal/distance.h"
@@ -97,6 +98,71 @@ class CustomSphere : public ShapeBase {
   }
 
   Scalar radius;
+};
+
+
+// ============================================================================
+// CustomPrism: a box implemented as a custom ShapeBase subclass that also
+// provides a support set (face) for contact patch computation.
+// ============================================================================
+class CustomPrism : public ShapeBase {
+ public:
+  explicit CustomPrism(const Vec3s& half) : ShapeBase() {
+    for (int i = 0; i < 8; ++i) {
+      pts[i] = Vec3s((i & 1) ? half[0] : -half[0], (i & 2) ? half[1] : -half[1],
+                     (i & 4) ? half[2] : -half[2]);
+    }
+  }
+
+  CustomPrism* clone() const override { return new CustomPrism(*this); }
+
+  NODE_TYPE getNodeType() const override { return GEOM_CUSTOM; }
+
+  void computeLocalAABB() override {
+    aabb_local.min_ = pts[0];
+    aabb_local.max_ = pts[7];
+    aabb_center = aabb_local.center();
+    aabb_radius = (aabb_local.min_ - aabb_center).norm();
+  }
+
+  void computeShapeSupport(const Vec3s& dir, Vec3s& support, int& /*hint*/,
+                           details::ShapeSupportData& /*data*/) const override {
+    Scalar best = -std::numeric_limits<Scalar>::infinity();
+    for (const Vec3s& p : pts) {
+      const Scalar d = dir.dot(p);
+      if (d > best) {
+        best = d;
+        support = p;
+      }
+    }
+  }
+
+  void computeShapeSupportSet(SupportSet& support_set, int& /*hint*/,
+                              details::ShapeSupportData& data,
+                              size_t /*num_sampled_supports*/,
+                              Scalar tol) const override {
+    const Vec3s n = support_set.getNormal();
+    Scalar best = -std::numeric_limits<Scalar>::infinity();
+    for (const Vec3s& p : pts) best = (std::max)(best, n.dot(p));
+    std::vector<Vec2s>& poly = data.polygon;
+    poly.clear();
+    for (const Vec3s& p : pts) {
+      if (best - n.dot(p) <= tol) {
+        poly.push_back(support_set.tf.inverseTransform(p).head<2>());
+      }
+    }
+    details::computeSupportSetConvexHull(poly, support_set.points());
+  }
+
+  bool isEqual(const CollisionGeometry& other) const override {
+    const CustomPrism* o = dynamic_cast<const CustomPrism*>(&other);
+    if (o == nullptr) return false;
+    for (int i = 0; i < 8; ++i)
+      if (pts[i] != o->pts[i]) return false;
+    return true;
+  }
+
+  Vec3s pts[8];
 };
 
 // ============================================================================
@@ -718,6 +784,47 @@ BOOST_AUTO_TEST_CASE(test_custom_shape_contact_patch) {
 
     const ContactPatch& patch = patch_res.getContactPatch(0);
     BOOST_CHECK_EQUAL(patch.size(), 1u);
+  }
+}
+
+/// A custom shape overriding computeShapeSupportSet() yields a full face patch,
+/// in both argument orders (checks DEFAULT and INVERTED directions).
+BOOST_AUTO_TEST_CASE(test_custom_shape_support_set_flat_flat) {
+  CustomPrism prism(Vec3s(1, 1, 1));
+  prism.computeLocalAABB();
+  Box box(2.0, 2.0, 2.0);
+
+  const Transform3s tf_prism;  // identity
+  // Box above the prism, shifted in x/y so that the overlap is a 1.5 x 1.75
+  // rectangle, with a small penetration along z.
+  const Transform3s tf_box(Quats::Identity(), Vec3s(0.5, 0.25, 2.0 - 0.01));
+
+  const CollisionRequest col_req(CollisionRequestFlag::CONTACT, 1);
+  const ContactPatchRequest patch_req;
+
+  {
+    CollisionResult col_res;
+    coal::collide(&prism, tf_prism, &box, tf_box, col_req, col_res);
+    BOOST_REQUIRE(col_res.isCollision());
+    ContactPatchResult patch_res(patch_req);
+    coal::computeContactPatch(&prism, tf_prism, &box, tf_box, col_res,
+                              patch_req, patch_res);
+    BOOST_REQUIRE(patch_res.numContactPatches() > 0);
+    const ContactPatch& patch = patch_res.getContactPatch(0);
+    BOOST_CHECK_EQUAL(patch.size(), 4u);
+    BOOST_CHECK_SMALL(patch.computeArea() - Scalar(1.5 * 1.75), Scalar(1e-6));
+  }
+  {
+    CollisionResult col_res;
+    coal::collide(&box, tf_box, &prism, tf_prism, col_req, col_res);
+    BOOST_REQUIRE(col_res.isCollision());
+    ContactPatchResult patch_res(patch_req);
+    coal::computeContactPatch(&box, tf_box, &prism, tf_prism, col_res,
+                              patch_req, patch_res);
+    BOOST_REQUIRE(patch_res.numContactPatches() > 0);
+    const ContactPatch& patch = patch_res.getContactPatch(0);
+    BOOST_CHECK_EQUAL(patch.size(), 4u);
+    BOOST_CHECK_SMALL(patch.computeArea() - Scalar(1.5 * 1.75), Scalar(1e-6));
   }
 }
 
