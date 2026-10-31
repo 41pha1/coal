@@ -35,7 +35,9 @@
 /** \author Louis Montaut */
 
 #define _USE_MATH_DEFINES
+#include <algorithm>
 #include <cmath>
+#include <limits>
 
 #define BOOST_TEST_MODULE COAL_POLYGON_CONVEX_HULL
 #include <boost/test/included/unit_test.hpp>
@@ -132,6 +134,64 @@ BOOST_AUTO_TEST_CASE(test_compute_polygon_convex_hull) {
         }
       }
       BOOST_CHECK(same_cvx_hull);
+    }
+  }
+}
+
+/// @brief Checks that `cvx_hull` is strictly counter-clockwise and contains
+/// every point of `cloud`.
+bool isCcwHullOf(const std::vector<Vec2s>& cvx_hull,
+                 const std::vector<Vec2s>& cloud) {
+  const auto det = [](const Vec2s& a, const Vec2s& b, const Vec2s& c) {
+    return (b(0) - a(0)) * (c(1) - a(1)) - (b(1) - a(1)) * (c(0) - a(0));
+  };
+  const std::size_t n = cvx_hull.size();
+  if (n < 3) return false;
+  for (std::size_t i = 0; i < n; ++i) {
+    const Vec2s& a = cvx_hull[i];
+    const Vec2s& b = cvx_hull[(i + 1) % n];
+    if (!(det(a, b, cvx_hull[(i + 2) % n]) > 0)) return false;
+    for (const Vec2s& pt : cloud) {
+      if (det(a, b, pt) < -Eigen::NumTraits<Scalar>::dummy_precision())
+        return false;
+    }
+  }
+  return true;
+}
+
+BOOST_AUTO_TEST_CASE(test_compute_polygon_convex_hull_degenerate) {
+  std::vector<Vec2s> cvx_hull;
+
+  // Square with duplicated corners and colinear points on and inside it.
+  const std::vector<Vec2s> square = {
+      Vec2s(0, 0), Vec2s(1, 0),   Vec2s(1, 1),   Vec2s(0, 1),     Vec2s(0, 0),
+      Vec2s(1, 1), Vec2s(0.5, 0), Vec2s(1, 0.5), Vec2s(0.5, 0.5), Vec2s(0, 0)};
+  computePolygonConvexHull(square, cvx_hull);
+  BOOST_CHECK(cvx_hull.size() == 4);
+  BOOST_CHECK(isCcwHullOf(cvx_hull, square));
+
+  // Identical points give a single point, colinear points a segment.
+  computePolygonConvexHull(std::vector<Vec2s>(6, Vec2s(0.3, -0.2)), cvx_hull);
+  BOOST_CHECK(cvx_hull.size() == 1);
+  const std::vector<Vec2s> line = {Vec2s(0, 0), Vec2s(2, 2), Vec2s(1, 1),
+                                   Vec2s(3, 3), Vec2s(1, 1)};
+  computePolygonConvexHull(line, cvx_hull);
+  BOOST_CHECK(cvx_hull.size() == 2);
+
+  // A non-finite point gives an empty hull.
+  std::vector<Vec2s> with_nan = square;
+  with_nan[3] = Vec2s(std::numeric_limits<Scalar>::quiet_NaN(), 0);
+  computePolygonConvexHull(with_nan, cvx_hull);
+  BOOST_CHECK(cvx_hull.empty());
+
+  // Clouds on a coarse grid: many duplicate and colinear points.
+  for (std::size_t i = 0; i < 200; ++i) {
+    std::vector<Vec2s> cloud = generateRandomCloud(50);
+    for (Vec2s& pt : cloud) pt = (3 * pt).array().round().matrix();
+    computePolygonConvexHull(cloud, cvx_hull);
+    BOOST_CHECK(isCcwHullOf(cvx_hull, cloud));
+    for (const Vec2s& pt : cvx_hull) {
+      BOOST_CHECK(std::find(cloud.begin(), cloud.end(), pt) != cloud.end());
     }
   }
 }
